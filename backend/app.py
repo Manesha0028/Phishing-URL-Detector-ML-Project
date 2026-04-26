@@ -1,5 +1,7 @@
 import os
 import re
+import sys
+import subprocess
 import joblib
 import requests
 import tldextract
@@ -15,17 +17,52 @@ CORS(app)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.path.join(BASE_DIR, "..", "model")
+TRAIN_SCRIPT = os.path.join(MODEL_DIR, "train_model.py")
 
-# Load models and features
-model_rf = joblib.load(os.path.join(MODEL_DIR, "phishing_live_model.pkl"))
-model_lr = joblib.load(os.path.join(MODEL_DIR, "phishing_lr_model.pkl"))
-lr_scaler = joblib.load(os.path.join(MODEL_DIR, "lr_scaler.pkl"))
-feature_names = joblib.load(os.path.join(MODEL_DIR, "feature_names.pkl"))
-
-MODELS = {
-    "random_forest": {"model": model_rf, "label": "Random Forest", "scaler": None},
-    "logistic_regression": {"model": model_lr, "label": "Logistic Regression", "scaler": lr_scaler},
+MODEL_PATHS = {
+    "rf": os.path.join(MODEL_DIR, "phishing_live_model.pkl"),
+    "lr": os.path.join(MODEL_DIR, "phishing_lr_model.pkl"),
+    "lr_scaler": os.path.join(MODEL_DIR, "lr_scaler.pkl"),
+    "feature_names": os.path.join(MODEL_DIR, "feature_names.pkl"),
 }
+
+def _run_training_script() -> None:
+    """Rebuild model artifacts for the currently installed sklearn version."""
+    result = subprocess.run(
+        [sys.executable, TRAIN_SCRIPT],
+        cwd=MODEL_DIR,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            "Model retraining failed.\n"
+            f"STDOUT:\n{result.stdout}\n"
+            f"STDERR:\n{result.stderr}"
+        )
+
+def _load_model_artifacts():
+    model_rf = joblib.load(MODEL_PATHS["rf"])
+    model_lr = joblib.load(MODEL_PATHS["lr"])
+    lr_scaler = joblib.load(MODEL_PATHS["lr_scaler"])
+    feature_names = joblib.load(MODEL_PATHS["feature_names"])
+
+    models = {
+        "random_forest": {"model": model_rf, "label": "Random Forest", "scaler": None},
+        "logistic_regression": {"model": model_lr, "label": "Logistic Regression", "scaler": lr_scaler},
+    }
+    return models, feature_names
+
+def _load_or_rebuild_models():
+    try:
+        return _load_model_artifacts()
+    except Exception as exc:
+        print(f"Model loading failed ({exc}). Rebuilding model files...")
+        _run_training_script()
+        return _load_model_artifacts()
+
+MODELS, feature_names = _load_or_rebuild_models()
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -354,7 +391,7 @@ def extract():
             model_features[col] = features.get(col, 0)
         
         return jsonify({
-            "model": MODEL_LABEL,
+            "model": "feature_extraction",
             "url": features["_final_url"],
             "fetch_status": features["_fetch_status"],
             "suspicious_score": features.get("_suspicious_score", 0),
@@ -453,19 +490,31 @@ def predict_manual():
         if not data:
             return jsonify({"error": "No feature data provided"}), 400
         
+        model_key = data.get("model", "random_forest")
+        if model_key not in MODELS:
+            return jsonify({"error": f"Unknown model '{model_key}'. Choose from: {list(MODELS.keys())}"}), 400
+
+        selected = MODELS[model_key]
+        active_model = selected["model"]
+        model_label = selected["label"]
+        scaler = selected["scaler"]
+
         # Ensure all features are present
         X = pd.DataFrame([{col: data.get(col, 0) for col in feature_names}])
+        if scaler is not None:
+            X = pd.DataFrame(scaler.transform(X), columns=feature_names)
         
-        prediction_raw = int(model.predict(X)[0])
+        prediction_raw = int(active_model.predict(X)[0])
         
         confidence = None
-        if hasattr(model, "predict_proba"):
-            confidence = float(model.predict_proba(X)[0].max()) * 100
+        if hasattr(active_model, "predict_proba"):
+            confidence = float(active_model.predict_proba(X)[0].max()) * 100
         
         label = "Legitimate" if prediction_raw == 0 else "Phishing"
         
         return jsonify({
-            "model": MODEL_LABEL,
+            "model": model_label,
+            "model_key": model_key,
             "fetch_status": "manual input",
             "prediction": prediction_raw,
             "label": label,

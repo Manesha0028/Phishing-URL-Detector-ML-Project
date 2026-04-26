@@ -7,7 +7,9 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
-DATASET_PATH = os.path.join("..", "dataset", "phishing_url_dataset.csv")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATASET_PATH = os.path.join(BASE_DIR, "..", "dataset", "phishing_url_dataset.csv")
+MODEL_DIR = BASE_DIR
 
 LIVE_FEATURES = [
     "URLLength",
@@ -81,9 +83,9 @@ print("Precision:", round(precision_score(y_test, y_pred_rf, zero_division=0), 4
 print("Recall   :", round(recall_score(y_test, y_pred_rf, zero_division=0), 4))
 print("F1 Score :", round(f1_score(y_test, y_pred_rf, zero_division=0), 4))
 
-joblib.dump(rf_model, "phishing_live_model.pkl")
-joblib.dump(LIVE_FEATURES, "feature_names.pkl")
-joblib.dump(False, "uses_scaler.pkl")
+joblib.dump(rf_model, os.path.join(MODEL_DIR, "phishing_live_model.pkl"))
+joblib.dump(LIVE_FEATURES, os.path.join(MODEL_DIR, "feature_names.pkl"))
+joblib.dump(False, os.path.join(MODEL_DIR, "uses_scaler.pkl"))
 
 # ── Logistic Regression ─────────────────────────────────────────
 print("\n=== Logistic Regression ===")
@@ -99,8 +101,8 @@ print("Precision:", round(precision_score(y_test, y_pred_lr, zero_division=0), 4
 print("Recall   :", round(recall_score(y_test, y_pred_lr, zero_division=0), 4))
 print("F1 Score :", round(f1_score(y_test, y_pred_lr, zero_division=0), 4))
 
-joblib.dump(lr_model, "phishing_lr_model.pkl")
-joblib.dump(scaler, "lr_scaler.pkl")
+joblib.dump(lr_model, os.path.join(MODEL_DIR, "phishing_lr_model.pkl"))
+joblib.dump(scaler, os.path.join(MODEL_DIR, "lr_scaler.pkl"))
 
 print("\nSaved:")
 print("- phishing_live_model.pkl  (Random Forest)")
