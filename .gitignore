@@ -41,8 +41,8 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# ML artifacts
-*.pkl
+# ML artifacts (tracked via Git LFS in model/)
+!model/*.pkl
 *.joblib
 *.h5
 *.onnx
